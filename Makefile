@@ -2,28 +2,33 @@
 VENV := .venv
 MIGRATION ?= 0001
 
+.PHONY: all venv run make_migrations migrate createsuperuser
+
 # default target, when make executed without arguments
 all: venv
 
-$(VENV)/bin/activate: requirements.txt
+
+$(VENV)/bin/python:
 	python3 -m venv $(VENV)
-	./$(VENV)/bin/python3.12 -m pip install --upgrade pip
-	./$(VENV)/bin/pip3.12 install -r requirements.txt
+
+$(VENV)/.requirements-installed: requirements.txt | $(VENV)/bin/python
+	./$(VENV)/bin/python -m pip install -r requirements.txt
+	touch $@
 
 # venv is a shortcut target
-venv: $(VENV)/bin/activate
+venv: $(VENV)/.requirements-installed
 
 run: venv
-	./$(VENV)/bin/python3.12 manage.py runserver 9112
+	./$(VENV)/bin/python manage.py runserver 9112
 
 make_migrations: venv
-	./$(VENV)/bin/python3.12 manage.py makemigrations
-	./$(VENV)/bin/python3.12 manage.py sqlmigrate geo 0001  # change this
-	./$(VENV)/bin/python3.12 manage.py migrate
+	./$(VENV)/bin/python manage.py makemigrations
+	./$(VENV)/bin/python manage.py sqlmigrate geo 0001  # change this
+	./$(VENV)/bin/python manage.py migrate
 
 migrate: venv
-	./$(VENV)/bin/python3.12 manage.py migrate --run-syncdb
+	./$(VENV)/bin/python manage.py migrate --run-syncdb
 
 createsuperuser: venv
-	./$(VENV)/bin/python3.12 manage.py createsuperuser
+	./$(VENV)/bin/python manage.py createsuperuser
 # mrommel + ...

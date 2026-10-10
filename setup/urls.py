@@ -17,6 +17,9 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
+from geo.views import geocode
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/geocode/', geocode, name='geocode'),
 ]
