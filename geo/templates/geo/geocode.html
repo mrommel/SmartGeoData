@@ -24,6 +24,7 @@
 <main>
     <h1>Geocode an address</h1>
     <p>Enter one city or street address to find matching city coordinates.</p>
+    <p>Using the API? <a href="{% url 'swagger-ui' %}">View the Swagger documentation</a>.</p>
     <form id="geocode-form">
         <label for="address">Address</label>
         <input id="address" name="text" type="text" maxlength="255" required autocomplete="street-address"

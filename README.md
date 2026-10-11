@@ -54,6 +54,8 @@ Geocoding requires a running **omlx** server with an OpenAI-compatible chat comp
 
 ## Geocoding API
 
+Interactive documentation for both `/api/geocode/` and `/api/tokenizer-status/` is at `http://127.0.0.1:9112/swagger/`. The OpenAPI 3 schema is available at `/api/openapi.json`. Swagger UI loads its JavaScript and CSS from a version-pinned jsDelivr CDN, so the interactive page needs an internet connection; the schema itself does not.
+
 Send a GET request to `/api/geocode/` with a `text` query parameter (1–255 characters):
 
 ```sh

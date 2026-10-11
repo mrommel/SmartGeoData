@@ -30,6 +30,7 @@ class GeocodePageTests(SimpleTestCase):
 		self.assertContains(response, 'name="text"')
 		self.assertContains(response, 'maxlength="255"')
 		self.assertContains(response, reverse('geocode'))
+		self.assertContains(response, f'href="{reverse("swagger-ui")}"')
 		self.assertEqual(self.client.post(reverse('geocode-page')).status_code, 405)
 
 

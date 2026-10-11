@@ -20,6 +20,7 @@ from django.urls import path
 
 from geo.autocomplete import GeoAutocomplete
 from geo.models import City, Country, County, State, StreetName
+from geo.openapi import openapi_schema, swagger_ui
 from geo.views import geocode, geocode_page, tokenizer_status
 
 urlpatterns = [
@@ -27,6 +28,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/geocode/', geocode, name='geocode'),
     path('api/tokenizer-status/', tokenizer_status, name='tokenizer-status'),
+    path('api/openapi.json', openapi_schema, name='openapi-schema'),
+    path('swagger/', swagger_ui, name='swagger-ui'),
     path('autocomplete/state/', staff_member_required(GeoAutocomplete.as_view(model=State)), name='state_autocomplete'),
     path('autocomplete/county/', staff_member_required(GeoAutocomplete.as_view(model=County)), name='county_autocomplete'),
     path('autocomplete/country/', staff_member_required(GeoAutocomplete.as_view(model=Country)), name='country_autocomplete'),
