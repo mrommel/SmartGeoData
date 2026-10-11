@@ -40,6 +40,8 @@ PY
 
 Cities need `lat` and `lng` to appear in geocoding results. Street queries require a street-to-city association; alternative city and street names can be added for matching.
 
+Geocoding requires a running **omlx** server with an OpenAI-compatible chat completions endpoint. Set `OMLX_MODEL` in `.env` to a model served by omlx. Set `OMLX_API_KEY` if your server requires Bearer authentication. `OMLX_BASE_URL` defaults to `http://127.0.0.1:8000/v1` (override it if your server uses another host or port); `OMLX_TIMEOUT` defaults to 15 seconds. The server extracts street, house number, city, county, state, country, and postal code as JSON; only names found by the local street/city tokenizers and matching database records produce results. The house number does not affect coordinates (which remain city coordinates).
+
 ## Geocoding API
 
 Send a GET request to `/api/geocode/` with a `text` query parameter (1–255 characters):
@@ -68,7 +70,7 @@ If matching data has been entered, the response has this shape:
 }
 ```
 
-The `street` key appears only for street matches. Results contain city coordinates (not a street address's precise location) and are limited to 10. An unmatched query returns `{"results": []}`; missing, blank, or overlong `text` returns HTTP 400 with an `error` message. The endpoint accepts GET only.
+The `street` key appears only for street matches. Results contain city coordinates (not a street address's precise location) and are limited to 10. An unmatched query returns `{"results": []}`; missing, blank, or overlong `text` returns HTTP 400 with an `error` message. If omlx is unavailable, unconfigured, or returns invalid JSON, the endpoint returns HTTP 503. The endpoint accepts GET only.
 
 ## Tests
 
@@ -78,6 +80,14 @@ make venv
 ```
 
 The test suite uses an in-memory SQLite database.
+
+To exercise the **real omlx server** and tokenizer/database matching end to end, start omlx, set `OMLX_MODEL` to a served model (and `OMLX_BASE_URL` if not using the default), then run `make test_e2e` (equivalent to):
+
+```sh
+RUN_OMLX_E2E=1 ./.venv/bin/python manage.py test geo.test_e2e --tag=e2e
+```
+
+The live test seeds real-world Berlin, Paris, and New York addresses in a temporary SQLite test database, sends actual requests to omlx, and checks complete API responses. It allows 120 seconds per inference (for local model startup). It does not read or modify your PostgreSQL database. Live tests are skipped by default when running `manage.py test geo`; with `RUN_OMLX_E2E=1`, an unreachable or incorrectly configured model fails the test rather than silently skipping it. Model extraction can vary between models; use an instruction-following model capable of returning JSON.
 
 ## Deployment note
 

@@ -11,6 +11,8 @@ pip==26.2.1
 slippers==0.7.1
 python-dotenv>=1.0,<2
 pillow
+termcolor==2.3.0
+strsimpy==0.2.1
 
  # for postgres
 psycopg2-binary==2.9.13

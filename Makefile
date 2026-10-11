@@ -2,7 +2,7 @@
 VENV := .venv
 MIGRATION ?= 0001
 
-.PHONY: all venv run make_migrations migrate createsuperuser
+.PHONY: all venv run make_migrations migrate createsuperuser test_e2e
 
 # default target, when make executed without arguments
 all: venv
@@ -20,6 +20,9 @@ venv: $(VENV)/.requirements-installed
 
 run: venv
 	./$(VENV)/bin/python manage.py runserver 9112
+
+test_e2e: venv
+	RUN_OMLX_E2E=1 ./$(VENV)/bin/python manage.py test geo.test_e2e --tag=e2e
 
 make_migrations: venv
 	./$(VENV)/bin/python manage.py makemigrations

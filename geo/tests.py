@@ -1,11 +1,45 @@
-from django.test import TestCase
+import json
+from io import BytesIO
+from unittest.mock import patch
+
+from django.test import TestCase, SimpleTestCase, override_settings
 from django.urls import reverse
 
+from geo.llm import AddressExtractionError, extract_address
 from geo.models import (AlternativeCityName, AlternativeCountryName, AlternativeStreetName,
 						City, Country, State, StreetName)
 
 
 class GeocodeTests(TestCase):
+	def setUp(self):
+		patcher = patch('geo.views.extract_address', side_effect=self.extract_fixture)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
+	@staticmethod
+	def extract_fixture(text):
+		# Simulate structured omlx output; the view must resolve names using tokenizers.
+		parts = {key: '' for key in ('street', 'house_number', 'city', 'county',
+		                            'state', 'country', 'postal_code')}
+		for name in ('Unter den Linden', 'Linden Avenue', 'Market Street', 'No Coordinates'):
+			if name in text:
+				parts['street'] = name
+				break
+		for name in ('Berlin', 'Berlyn', 'Munich', 'Paris', 'Unknown', 'No Such City'):
+			if name in text:
+				parts['city'] = name
+				break
+		for name in ('Deutschland', 'Germany', 'France', 'DE'):
+			if name in text.split(', ') or text.endswith(name):
+				parts['country'] = name
+		for name in ('Texas',):
+			if name in text:
+				parts['state'] = name
+		for zip_code in ('10115', '80331', '99999'):
+			if zip_code in text:
+				parts['postal_code'] = zip_code
+		return parts
+
 	@classmethod
 	def setUpTestData(cls):
 		cls.germany = Country.objects.create(name='Germany', iso2='DE', zips_use_range=True)
@@ -82,3 +116,32 @@ class GeocodeTests(TestCase):
 		self.assertEqual(self.lookup(' ' * 4).status_code, 400)
 		self.assertEqual(self.lookup('x' * 256).status_code, 400)
 		self.assertEqual(self.client.post(reverse('geocode'), {'text': 'Berlin'}).status_code, 405)
+
+	def test_omlx_unavailable(self):
+		with patch('geo.views.extract_address', side_effect=AddressExtractionError()):
+			response = self.lookup('Berlin')
+		self.assertEqual(response.status_code, 503)
+
+
+@override_settings(OMLX_MODEL='test-model', OMLX_API_KEY='test-key',
+				   OMLX_BASE_URL='http://localhost:8000/v1', OMLX_TIMEOUT=2)
+class ExtractionTests(SimpleTestCase):
+	def test_extract_address(self):
+		response = {'choices': [{'message': {'content': json.dumps({'city': 'Berlin', 'street': 'Market Street'})}}]}
+		with patch('geo.llm.urllib.request.urlopen', return_value=BytesIO(json.dumps(response).encode())) as send:
+			parts = extract_address('Market Street, Berlin')
+		self.assertEqual(parts['city'], 'Berlin')
+		self.assertEqual(parts['postal_code'], '')
+		request = send.call_args.args[0]
+		self.assertEqual(request.full_url, 'http://localhost:8000/v1/chat/completions')
+		self.assertEqual(request.get_header('Authorization'), 'Bearer test-key')
+		self.assertEqual(json.loads(request.data)['model'], 'test-model')
+		self.assertEqual(send.call_args.kwargs['timeout'], 2)
+
+	def test_invalid_response(self):
+		response = {'choices': [{'message': {'content': '{invalid'}}]}
+		with patch('geo.llm.urllib.request.urlopen', return_value=BytesIO(json.dumps(response).encode())):
+			with self.assertRaises(AddressExtractionError):
+				extract_address('Berlin')
+
+

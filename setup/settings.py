@@ -19,6 +19,12 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
+# omlx exposes an OpenAI-compatible /v1/chat/completions endpoint.
+OMLX_BASE_URL = os.environ.get('OMLX_BASE_URL', 'http://127.0.0.1:8000/v1')
+OMLX_MODEL = os.environ.get('OMLX_MODEL', '')
+OMLX_API_KEY = os.environ.get('OMLX_API_KEY', '')
+OMLX_TIMEOUT = float(os.environ.get('OMLX_TIMEOUT', '15'))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/

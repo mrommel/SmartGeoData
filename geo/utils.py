@@ -37,3 +37,12 @@ def _clean_string(input_string: str) -> str:
 	input_string = input_string.strip()
 
 	return input_string
+
+
+def is_integer(n):
+	try:
+		float(n)
+	except ValueError:
+		return False
+	else:
+		return float(n).is_integer()
