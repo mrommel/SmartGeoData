@@ -83,7 +83,7 @@ class GeocodeTests(TestCase):
 
 	def setUp(self):
 		_loaded.clear()
-		patcher = patch('geo.views.extract_address', side_effect=self.extract_fixture)
+		patcher = patch('geo.api.extract_address', side_effect=self.extract_fixture)
 		patcher.start()
 		self.addCleanup(patcher.stop)
 
@@ -144,7 +144,7 @@ class GeocodeTests(TestCase):
 		self.assertEqual(self.client.post(reverse('geocode'), {'text': 'Berlin'}).status_code, 405)
 
 	def test_omlx_unavailable(self):
-		with patch('geo.views.extract_address', side_effect=AddressExtractionError()):
+		with patch('geo.api.extract_address', side_effect=AddressExtractionError()):
 			response = self.lookup('Berlin')
 		self.assertEqual(response.status_code, 503)
 

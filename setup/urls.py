@@ -19,9 +19,10 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.urls import path
 
 from geo.autocomplete import GeoAutocomplete
+from geo.api import geocode
 from geo.models import City, Country, County, State, StreetName
 from geo.openapi import openapi_schema, swagger_ui
-from geo.views import geocode, geocode_page, tokenizer_status
+from geo.views import geocode_page, tokenizer_status
 
 urlpatterns = [
     path('', geocode_page, name='geocode-page'),
