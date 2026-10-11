@@ -23,7 +23,7 @@ run: venv
 
 make_migrations: venv
 	./$(VENV)/bin/python manage.py makemigrations
-	./$(VENV)/bin/python manage.py sqlmigrate geo 0001  # change this
+	./$(VENV)/bin/python manage.py sqlmigrate geo 0002  # change this
 	./$(VENV)/bin/python manage.py migrate
 
 migrate: venv

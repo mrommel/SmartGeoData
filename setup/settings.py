@@ -9,18 +9,22 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
-
+import os
+import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-^l@o%tge6&esq(3*)6u5o9c$n7ilby3)o&0iike3chh9j=ap%('
+SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -74,11 +78,25 @@ WSGI_APPLICATION = 'setup.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+	"default": {
+		# 'ENGINE': 'django.db.backends.sqlite3',
+		# 'NAME': BASE_DIR / 'db.sqlite3'
+		"ENGINE": "django.db.backends.postgresql",
+		"NAME": "smartgeodata",
+		"USER": "postgres",
+    "PASSWORD": os.environ['POSTGRES_PASSWORD'],
+		"HOST": "localhost",  # set in docker-compose.yml
+		"PORT": 5435,  # postgres port
+	}
 }
+
+# Use in-memory SQLite for testing
+# https://www.geeksforgeeks.org/python/how-to-run-django-s-test-using-in-memory-database/
+if 'test' in sys.argv:
+	DATABASES['default'] = {
+		'ENGINE': 'django.db.backends.sqlite3',
+		'NAME': ':memory:'
+	}
 
 
 # Password validation
