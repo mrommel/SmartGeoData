@@ -1,5 +1,6 @@
 """Extract address fields with an omlx OpenAI-compatible chat endpoint."""
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -36,8 +37,18 @@ def extract_address(text):
 	request = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'),
 	                                 headers=headers, method='POST')
 	try:
-		with urllib.request.urlopen(request, timeout=settings.OMLX_TIMEOUT) as response:
-			data = json.load(response)
+		for attempt in range(2):
+			try:
+				with urllib.request.urlopen(request, timeout=settings.OMLX_TIMEOUT) as response:
+					data = json.load(response)
+				break
+			except urllib.error.HTTPError as exc:
+				if attempt or exc.code not in (429, 502, 503, 504):
+					raise
+			except (urllib.error.URLError, TimeoutError, OSError):
+				if attempt:
+					raise
+			time.sleep(0.5)
 		content = data['choices'][0]['message']['content']
 		if not isinstance(content, str):
 			raise ValueError('Missing response content')

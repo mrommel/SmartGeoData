@@ -87,7 +87,6 @@ class StreetTokenizer:
 
 		self._populated = False
 
-
 	def populate(self):
 		if self._populated:
 			return
@@ -117,6 +116,15 @@ class StreetTokenizer:
 		self.street_dict = collections.OrderedDict(sorted(self.street_dict.items(), key=lambda x: len(x[0]), reverse=True))
 		# print(self.street_dict)
 
+		self.load_snapshot(self.street_dict)
+		print(f'### populated street dict with {len(self.street_regex.keys()):,} streets')
+
+	def load_snapshot(self, street_dict):
+		"""Restore a completed background population in the serving process."""
+		self.street_dict = collections.OrderedDict(
+			sorted(street_dict.items(), key=lambda item: len(item[0]), reverse=True))
+		self.street_regex = dict()
+		self.street_number_regex = dict()
 		for key, value in self.street_dict.items():
 			key = key.replace(' ', r'\s')
 			pattern = re.compile(fr'(?<!\S){key}(?!\S)')
@@ -133,7 +141,6 @@ class StreetTokenizer:
 		self.street_number_regex[re.compile(r'(n°(?P<nr>[0-9]{1,3}))')] = f'\g<nr>'  # N°5
 
 		self._populated = True
-		print(f'### populated street dict with {len(self.street_regex.keys()):,} streets')
 
 	def embed(self, text: str, warn: bool = False) -> str:
 		# fix common typos

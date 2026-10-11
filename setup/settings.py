@@ -41,14 +41,24 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'dal',
+    'dal_select2',
     'geo',
+    'django_tasks_db',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+	'django_admin_inline_paginator',
 ]
+
+TASKS = {
+    'default': {
+        'BACKEND': 'django_tasks_db.backend.DatabaseBackend',
+    },
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

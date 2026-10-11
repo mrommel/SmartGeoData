@@ -20,6 +20,14 @@ make migrate
 make run
 ```
 
+Run the django-tasks database worker in another terminal (after migrating):
+
+```sh
+./.venv/bin/python manage.py db_worker
+```
+
+Starting the web app queues city and street tokenizer population only if no task has been queued for that tokenizer yet. The worker builds persistent snapshots; web processes load the completed snapshots when needed. Server restarts reuse existing tasks instead of repeatedly rebuilding them. After changing geographic names, or to retry a failed task, run `./.venv/bin/python manage.py refresh_tokenizers` to queue a new pair. Without a worker, population remains pending and geocoding returns HTTP 503.
+
 The development server runs on port 9112. A fresh database has no geographic records, so searches return no results until data is entered. The geographic models are not currently registered in Django admin; use the Django shell to add records. For example, in a second terminal after running `make venv` and `make migrate`:
 
 ```sh
@@ -39,6 +47,8 @@ PY
 ```
 
 Cities need `lat` and `lng` to appear in geocoding results. Street queries require a street-to-city association; alternative city and street names can be added for matching.
+
+Open `http://127.0.0.1:9112/` in a browser to geocode one address using the web form. It displays matches and their city coordinates via the same API described below. JavaScript must be enabled.
 
 Geocoding requires a running **omlx** server with an OpenAI-compatible chat completions endpoint. Set `OMLX_MODEL` in `.env` to a model served by omlx. Set `OMLX_API_KEY` if your server requires Bearer authentication. `OMLX_BASE_URL` defaults to `http://127.0.0.1:8000/v1` (override it if your server uses another host or port); `OMLX_TIMEOUT` defaults to 15 seconds. The server extracts street, house number, city, county, state, country, and postal code as JSON; only names found by the local street/city tokenizers and matching database records produce results. The house number does not affect coordinates (which remain city coordinates).
 
@@ -70,7 +80,15 @@ If matching data has been entered, the response has this shape:
 }
 ```
 
-The `street` key appears only for street matches. Results contain city coordinates (not a street address's precise location) and are limited to 10. An unmatched query returns `{"results": []}`; missing, blank, or overlong `text` returns HTTP 400 with an `error` message. If omlx is unavailable, unconfigured, or returns invalid JSON, the endpoint returns HTTP 503. The endpoint accepts GET only.
+The `street` key appears only for street matches. Results contain city coordinates (not a street address's precise location) and are limited to 10. An unmatched query returns `{"results": []}`; missing, blank, or overlong `text` returns HTTP 400 with an `error` message. If omlx is unavailable, unconfigured, returns invalid JSON, or tokenizer population has not completed, the endpoint returns HTTP 503. The endpoint accepts GET only.
+
+GET `/api/tokenizer-status/` reports both tasks and the overall population state:
+
+```json
+{"status": "running", "tokenizers": {"city": "running", "street": "pending"}}
+```
+
+States are `pending`, `running`, `completed`, and `failed`. A failed tokenizer makes the overall status `failed`; run `./.venv/bin/python manage.py refresh_tokenizers` after fixing the underlying data to enqueue fresh tasks.
 
 ## Tests
 

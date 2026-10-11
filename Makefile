@@ -21,6 +21,9 @@ venv: $(VENV)/.requirements-installed
 run: venv
 	./$(VENV)/bin/python manage.py runserver 9112
 
+run_task_queue: venv
+	./$(VENV)/bin/python manage.py db_worker
+
 test_e2e: venv
 	RUN_OMLX_E2E=1 ./$(VENV)/bin/python manage.py test geo.test_e2e --tag=e2e
 
@@ -34,4 +37,4 @@ migrate: venv
 
 createsuperuser: venv
 	./$(VENV)/bin/python manage.py createsuperuser
-# mrommel + ...
+# mrommel + vFfF9hf07fHr14cL

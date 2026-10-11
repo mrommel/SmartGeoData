@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Geocode an address | SmartGeoData</title>
+    <style>
+        body { font: 1rem/1.5 system-ui, sans-serif; max-width: 48rem; margin: 3rem auto; padding: 0 1rem; color: #202833; }
+        h1 { line-height: 1.2; }
+        form { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
+        label { flex-basis: 100%; font-weight: 600; }
+        input { flex: 1 1 20rem; min-width: 0; padding: .7rem; font: inherit; }
+        button { padding: .7rem 1.25rem; font: inherit; cursor: pointer; }
+        button:disabled { cursor: wait; }
+        #status { min-height: 1.5rem; }
+        #results { list-style: none; padding: 0; }
+        #results li { border: 1px solid #ccd3db; border-radius: .5rem; padding: 1rem; margin: 1rem 0; }
+        #results dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: .5rem 0 0; }
+        #results dt { font-weight: 600; }
+        #results dd { margin: 0; overflow-wrap: anywhere; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Geocode an address</h1>
+    <p>Enter one city or street address to find matching city coordinates.</p>
+    <form id="geocode-form">
+        <label for="address">Address</label>
+        <input id="address" name="text" type="text" maxlength="255" required autocomplete="street-address"
+               placeholder="Unter den Linden 12, 10115 Berlin, Germany">
+        <button type="submit">Geocode</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <ul id="results" aria-label="Geocoding results"></ul>
+    <p>Coordinates represent the city, not the exact street address.</p>
+</main>
+<script>
+    const form = document.getElementById('geocode-form');
+    const status = document.getElementById('status');
+    const results = document.getElementById('results');
+    const button = form.querySelector('button');
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const text = form.elements.text.value.trim();
+        if (!text || text.length > 255) {
+            status.textContent = 'Enter an address between 1 and 255 characters.';
+            return;
+        }
+
+        results.replaceChildren();
+        status.textContent = 'Geocoding…';
+        button.disabled = true;
+        try {
+            const url = new URL('{% url "geocode" %}', window.location.href);
+            url.searchParams.set('text', text);
+            const response = await fetch(url);
+            const data = await response.json();
+            if (!response.ok) {
+                status.textContent = data.error || 'Geocoding failed. Please try again.';
+                return;
+            }
+            const matches = data.results;
+            status.textContent = matches.length ? `${matches.length} match${matches.length === 1 ? '' : 'es'} found.` : 'No matches found.';
+            for (const match of matches) {
+                const item = document.createElement('li');
+                const heading = document.createElement('strong');
+                heading.textContent = [match.street, match.city].filter(Boolean).join(', ');
+                item.append(heading);
+                const details = document.createElement('dl');
+                for (const [label, value] of [
+                    ['County', match.county], ['State', match.state], ['Country', match.country],
+                    ['Postal code', match.zip_code], ['Latitude', match.lat], ['Longitude', match.lng],
+                ]) {
+                    if (value === null || value === undefined || value === '') continue;
+                    const term = document.createElement('dt');
+                    term.textContent = label;
+                    const description = document.createElement('dd');
+                    description.textContent = label === 'Latitude' || label === 'Longitude'
+                        ? Number(value).toFixed(3) : String(value);
+                    details.append(term, description);
+                }
+                item.append(details);
+                results.append(item);
+            }
+        } catch (error) {
+            status.textContent = 'Could not reach the geocoding service. Please try again.';
+        } finally {
+            button.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>

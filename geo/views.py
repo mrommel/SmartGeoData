@@ -1,18 +1,27 @@
+import logging
 import re
 
 from django.http import JsonResponse
+from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
 from geo.llm import AddressExtractionError, extract_address
 from geo.models import City, Country, County, State, StreetCityMembership, StreetName
-from geo.tokenizer import StreetTokenizer, CityTokenizer
+from geo.tasks import get_tokenizers, population_status
 from geo.utils import _clean_string
 
-
-streetTokenizer = StreetTokenizer()
-cityTokenizer = CityTokenizer()
+logger = logging.getLogger(__name__)
 
 
+@require_GET
+def geocode_page(request):
+	"""Display the single-address geocoding form."""
+	return render(request, 'geo/geocode.html')
+
+
+@require_GET
+def tokenizer_status(request):
+	return JsonResponse(population_status())
 
 def _has_zip(city, postal_code):
 	postal_code = postal_code.replace(' ', '').casefold()
@@ -35,13 +44,18 @@ def geocode(request):
 	if not text or len(text) > 255:
 		return JsonResponse({'error': 'text must contain between 1 and 255 characters'}, status=400)
 
+	tokenizers = get_tokenizers()
+	if tokenizers is None:
+		return JsonResponse({'error': 'Tokenizer population is not complete'}, status=503)
+	cityTokenizer, streetTokenizer = tokenizers
+
 	try:
 		parts = extract_address(text)
-	except AddressExtractionError:
+	except AddressExtractionError as exc:
+		cause = exc.__cause__ or exc
+		logger.warning('Address extraction failed (%s): %s', type(cause).__name__, cause)
 		return JsonResponse({'error': 'Address extraction is unavailable'}, status=503)
 
-	cityTokenizer.populate()
-	streetTokenizer.populate()
 	city_name = _clean_string(parts['city'])
 	street_name = _clean_string(parts['street'])
 	city_ids = {entry[0] for entry in cityTokenizer.city_dict.get(city_name, [])} if city_name else set()

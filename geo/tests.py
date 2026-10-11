@@ -1,21 +1,39 @@
 import json
-from io import BytesIO
+import urllib.error
+from io import BytesIO, StringIO
 from unittest.mock import patch
 
+from django.core.management import call_command
 from django.test import TestCase, SimpleTestCase, override_settings
 from django.urls import reverse
+from django_tasks_db.models import DBTaskResult
 
 from geo.llm import AddressExtractionError, extract_address
 from geo.models import (AlternativeCityName, AlternativeCountryName, AlternativeStreetName,
 						City, Country, State, StreetName)
+from geo.tasks import POPULATION_TASKS, _loaded, start_population
+
+
+def finish_population():
+	"""Execute queued task bodies against the test database, storing worker results."""
+	start_population()
+	for population_task in POPULATION_TASKS.values():
+		job = DBTaskResult.objects.filter(task_path=population_task.module_path).latest('enqueued_at')
+		job.set_successful(population_task.call())
+
+
+class GeocodePageTests(SimpleTestCase):
+	def test_single_address_page(self):
+		response = self.client.get(reverse('geocode-page'))
+		self.assertEqual(response.status_code, 200)
+		self.assertTemplateUsed(response, 'geo/geocode.html')
+		self.assertContains(response, 'name="text"')
+		self.assertContains(response, 'maxlength="255"')
+		self.assertContains(response, reverse('geocode'))
+		self.assertEqual(self.client.post(reverse('geocode-page')).status_code, 405)
 
 
 class GeocodeTests(TestCase):
-	def setUp(self):
-		patcher = patch('geo.views.extract_address', side_effect=self.extract_fixture)
-		patcher.start()
-		self.addCleanup(patcher.stop)
-
 	@staticmethod
 	def extract_fixture(text):
 		# Simulate structured omlx output; the view must resolve names using tokenizers.
@@ -60,6 +78,13 @@ class GeocodeTests(TestCase):
 		cls.shared = StreetName.objects.create(name='Market Street')
 		cls.shared.cities.add(cls.berlin, cls.munich)
 		StreetName.objects.create(name='No Coordinates').cities.add(cls.unknown)
+		finish_population()
+
+	def setUp(self):
+		_loaded.clear()
+		patcher = patch('geo.views.extract_address', side_effect=self.extract_fixture)
+		patcher.start()
+		self.addCleanup(patcher.stop)
 
 	def lookup(self, text):
 		return self.client.get(reverse('geocode'), {'text': text})
@@ -123,6 +148,74 @@ class GeocodeTests(TestCase):
 		self.assertEqual(response.status_code, 503)
 
 
+class TokenizerStatusTests(TestCase):
+	def setUp(self):
+		_loaded.clear()
+
+	def status(self):
+		return self.client.get(reverse('tokenizer-status'))
+
+	def test_startup_does_not_requeue_existing_or_failed_tasks(self):
+		start_population()
+		start_population()
+		self.assertEqual(DBTaskResult.objects.count(), 2)
+		city_task = DBTaskResult.objects.get(task_path=POPULATION_TASKS['city'].module_path)
+		city_task.set_failed(ValueError('bad city'))
+		start_population()
+		self.assertEqual(DBTaskResult.objects.count(), 2)
+		self.assertEqual(self.status().json()['status'], 'failed')
+
+	def test_startup_only_queues_missing_task(self):
+		POPULATION_TASKS['city'].enqueue()
+		start_population()
+		self.assertEqual(DBTaskResult.objects.count(), 2)
+		self.assertEqual(DBTaskResult.objects.filter(task_path=POPULATION_TASKS['city'].module_path).count(), 1)
+		self.assertEqual(DBTaskResult.objects.filter(task_path=POPULATION_TASKS['street'].module_path).count(), 1)
+
+	def test_refresh_command_queues_new_pair(self):
+		start_population()
+		call_command('refresh_tokenizers', stdout=StringIO())
+		self.assertEqual(DBTaskResult.objects.count(), 4)
+		self.assertEqual(self.status().json()['status'], 'pending')
+
+	def test_pending_running_completed_and_failed(self):
+		self.assertEqual(self.status().json(), {
+			'status': 'pending', 'tokenizers': {'city': 'pending', 'street': 'pending'},
+		})
+		self.assertEqual(self.client.get(reverse('geocode'), {'text': 'Berlin'}).status_code, 503)
+		start_population()
+		jobs = {name: DBTaskResult.objects.get(task_path=population_task.module_path)
+		        for name, population_task in POPULATION_TASKS.items()}
+		self.assertEqual(self.status().json()['status'], 'pending')
+		jobs['city'].status = 'RUNNING'
+		jobs['city'].save(update_fields=['status'])
+		self.assertEqual(self.status().json(), {
+			'status': 'running', 'tokenizers': {'city': 'running', 'street': 'pending'},
+		})
+		jobs['city'].set_successful({'city_dict': {}, 'country_dict': {}})
+		self.assertEqual(self.status().json()['status'], 'pending')
+		jobs['street'].set_failed(ValueError('bad street'))
+		self.assertEqual(self.status().json(), {
+			'status': 'failed', 'tokenizers': {'city': 'completed', 'street': 'failed'},
+		})
+		self.assertEqual(self.client.post(reverse('tokenizer-status')).status_code, 405)
+
+	def test_successful_snapshots_and_new_startup(self):
+		Country.objects.create(name='Germany')
+		finish_population()
+		self.assertEqual(self.status().json()['status'], 'completed')
+		with patch('geo.tokenizer.CityTokenizer.populate', side_effect=AssertionError('synchronous populate')):
+			with patch('geo.tokenizer.StreetTokenizer.populate', side_effect=AssertionError('synchronous populate')):
+				from geo.tasks import get_tokenizers
+				city, street = get_tokenizers()
+				self.assertTrue(city.populated)
+				self.assertTrue(street._populated)
+				self.assertIn('germany', city.country_dict)
+		start_population(force=True)
+		self.assertEqual(self.status().json()['status'], 'pending')
+		self.assertIsNone(get_tokenizers())
+
+
 @override_settings(OMLX_MODEL='test-model', OMLX_API_KEY='test-key',
 				   OMLX_BASE_URL='http://localhost:8000/v1', OMLX_TIMEOUT=2)
 class ExtractionTests(SimpleTestCase):
@@ -138,10 +231,37 @@ class ExtractionTests(SimpleTestCase):
 		self.assertEqual(json.loads(request.data)['model'], 'test-model')
 		self.assertEqual(send.call_args.kwargs['timeout'], 2)
 
-	def test_invalid_response(self):
-		response = {'choices': [{'message': {'content': '{invalid'}}]}
-		with patch('geo.llm.urllib.request.urlopen', return_value=BytesIO(json.dumps(response).encode())):
+	def test_temporary_omlx_error_retries_once(self):
+		response = {'choices': [{'message': {'content': '{"city": "Berlin"}'}}]}
+		with patch('geo.llm.time.sleep') as sleep:
+			with patch('geo.llm.urllib.request.urlopen', side_effect=[
+				urllib.error.HTTPError('http://localhost:8000/v1/chat/completions', 503,
+				                       'unavailable', {}, None),
+				BytesIO(json.dumps(response).encode()),
+			]) as send:
+				self.assertEqual(extract_address('Berlin')['city'], 'Berlin')
+		self.assertEqual(send.call_count, 2)
+		sleep.assert_called_once()
+
+	def test_unavailable_omlx_retries_only_once(self):
+		with patch('geo.llm.time.sleep'):
+			with patch('geo.llm.urllib.request.urlopen', side_effect=urllib.error.URLError('offline')) as send:
+				with self.assertRaises(AddressExtractionError):
+					extract_address('Berlin')
+		self.assertEqual(send.call_count, 2)
+
+	def test_permanent_omlx_error_is_not_retried(self):
+		with patch('geo.llm.urllib.request.urlopen', side_effect=urllib.error.HTTPError(
+			'http://localhost:8000/v1/chat/completions', 401, 'unauthorized', {}, None)) as send:
 			with self.assertRaises(AddressExtractionError):
 				extract_address('Berlin')
+		self.assertEqual(send.call_count, 1)
+
+	def test_invalid_response(self):
+		response = {'choices': [{'message': {'content': '{invalid'}}]}
+		with patch('geo.llm.urllib.request.urlopen', return_value=BytesIO(json.dumps(response).encode())) as send:
+			with self.assertRaises(AddressExtractionError):
+				extract_address('Berlin')
+		self.assertEqual(send.call_count, 1)
 
 

@@ -7,7 +7,8 @@ from django.test import TestCase, override_settings, tag
 from django.urls import reverse
 
 from geo.models import City, Country, State, StreetName
-from geo.views import cityTokenizer, streetTokenizer
+from geo.tasks import _loaded
+from geo.tests import finish_population
 
 
 @tag('e2e')
@@ -32,13 +33,10 @@ class LiveOmlxGeocodeTests(TestCase):
 		for street_name, city in (('Unter den Linden', berlin),
 		                          ('Avenue Anatole France', paris), ('5th Avenue', new_york)):
 			StreetName.objects.create(name=street_name).cities.add(city)
+		finish_population()
 
 	def setUp(self):
-		# Global tokenizer caches must not retain IDs from another test database.
-		cityTokenizer.reset()
-		streetTokenizer.reset()
-		self.addCleanup(cityTokenizer.reset)
-		self.addCleanup(streetTokenizer.reset)
+		_loaded.clear()
 		self.assertTrue(settings.OMLX_MODEL, 'Set OMLX_MODEL to a model served by omlx')
 
 	def test_real_world_addresses(self):
