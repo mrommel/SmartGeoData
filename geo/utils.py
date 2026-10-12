@@ -46,3 +46,7 @@ def is_integer(n):
 		return False
 	else:
 		return float(n).is_integer()
+
+
+def has_numbers(inputString):
+	return any(char.isdigit() for char in inputString)

@@ -15,6 +15,7 @@ pillow
 termcolor==3.3.0
 strsimpy==0.2.1
 opencv-python==4.12.0.88
+lat_lon_parser==1.3.1
 
  # for postgres
 psycopg2-binary==2.9.13

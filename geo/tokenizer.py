@@ -6,6 +6,7 @@ from typing import List, Optional
 from strsimpy.weighted_levenshtein import WeightedLevenshtein
 
 from geo import red, blue, green
+from geo.constants import AddressRegex
 from geo.models import StreetName, AlternativeStreetName, City, AlternativeCityName, Country, AlternativeCountryName, \
 	State
 from geo.utils import _clean_string, is_integer
@@ -1195,5 +1196,368 @@ class CityTokenizer:
 			random_city_id = city_id_set.pop()
 			print(f'Selected random City: {blue(random_city_id)}')
 			return random_city_id
+
+		return None
+
+
+class AddressObject:
+	def __init__(self):
+		self.street = None  # name str
+		self.street_id = None
+		self.streetNumber = None
+		self.zip_code = None
+		self.city = None  # name str
+		self.city_id = None
+		self.country = None
+
+	def __eq__(self, other: 'AddressObject'):
+		if not isinstance(other, AddressObject):
+			return False
+
+		if self.street != other.street:
+			return False
+
+		if self.streetNumber != other.streetNumber:
+			return False
+
+		if self.zip_code != other.zip_code:
+			return False
+
+		if self.city != other.city:
+			return False
+
+		if self.country != other.country:
+			return False
+
+		return True
+
+	def __str__(self):
+		street_str = '-'
+		if self.street is not None:
+			if self.streetNumber is None:
+				street_str = self.street
+			else:
+				if self.city is None:
+					street_str = f'{self.street} {self.streetNumber}'
+				else:
+					city_obj = City.objects.get(id=self.city_id)
+					if city_obj.country.id in [22, 27]:  # F, GB
+						street_str = f'{self.streetNumber} {self.street}'
+					else:
+						street_str = f'{self.street} {self.streetNumber}'
+
+		return f'street: {street_str}, zip: {self.zip_code}, city: {self.city}, country: {self.country}'
+
+	def __repr__(self):
+		return f'street: {self.street} {self.streetNumber}, zip: {self.zip_code}, city: {self.city}, country: {self.country}'
+
+
+class CombinedStreetCityTokenizer:
+	def __init__(self, streetTokenizer: StreetTokenizer, cityTokenizer: CityTokenizer):
+		self.combined_dict = dict()
+		self.combined_regex = dict()
+
+		self.streetTokenizer = streetTokenizer
+		self.cityTokenizer = cityTokenizer
+
+		self.max_length = -1
+
+		self._populated = False
+
+	def populate(self):
+		if self._populated:
+			return
+
+		for key, value in self.streetTokenizer.street_dict.items():
+			if key in self.cityTokenizer.city_dict:
+				self.combined_dict[key] = (value, self.cityTokenizer.city_dict[key])
+
+		self.combined_dict = collections.OrderedDict(sorted(self.combined_dict.items(), key=lambda x: len(x[0]), reverse=True))
+
+		for key, value in self.combined_dict.items():
+			key = key.replace(' ', r'\s')
+			pattern = re.compile(fr'(?<!\S){key}(?!\S).*(?<!\S){key}(?!\S)')
+			self.combined_regex[pattern] = value
+
+		# print(f'### Found {len(self.combined_dict.keys()):,} combined street/city names')
+
+		if len(self.combined_regex.values()) > 0:
+			max_combined_length = max(len(x) for x in self.combined_regex.values())
+		else:
+			max_combined_length = 0
+
+		if len(self.streetTokenizer.street_dict.keys()) > 0:
+			max_street_length = max(len(x) for x in self.streetTokenizer.street_dict.keys())
+			max_city_length = max(len(x) for x in self.cityTokenizer.city_dict.keys())
+			self.max_length = max([max_combined_length, max_street_length, max_city_length])
+			# print(f'### Max pattern length: {self.max_length}')
+			# traceback.print_stack(limit=5)
+
+			self._populated = True
+
+	def embed(self, text: str) -> str:
+		for length in reversed(range(self.max_length + 1)):
+			# 1st: check combined
+			for regex, key in self.combined_regex.items():
+				if len(key) != length:
+					continue
+
+				for match in regex.finditer(text):
+					match_dict = match.groupdict()
+					print(f'Todo: ### Match found by CombinedStreetCityTokenizer: {match_dict} in "{text}"')
+					# print(f'### regex: "{regex}" - {key}')
+					# text = regex.sub(f'STREET({key})', text, 1)  # only first occurrence
+
+			# 2nd: check street
+			for streetName, regex_item in zip(self.streetTokenizer.street_dict.keys(), self.streetTokenizer.street_regex.items()):
+			# for regex, key in self.streetTokenizer.street_regex.items():
+				regex, streetId = regex_item
+				if len(streetName) != length:
+					continue
+
+				# print(f'### regex: "{regex}" - {key}')
+				text = regex.sub(f'STREET({streetId})', text, 1)  # only first occurrence
+
+			# 3rd: check city
+			text = self.cityTokenizer.embed(text, length)
+
+		return text
+
+
+class AddressPatternTokenizer:
+	def __init__(self, streetTokenizer: StreetTokenizer, cityTokenizer: CityTokenizer):
+		street = AddressRegex.street
+		street_number = AddressRegex.street_number
+		zip = AddressRegex.zip
+		uk_zip = AddressRegex.uk_zip
+		city = AddressRegex.city
+
+		# street pattern
+		# '55 rue victor hugo'
+		# 'allee', 'strake' etc
+
+		# sorted by prio
+		self.pattern_list = [
+			# prio 5 - fallbacks
+			fr'{street}\s{street_number}\s{zip}\s{city}',  # no name, but street number
+			fr'{street_number}\s{street}\s{zip}\s{city}',  # no name, but french street number
+			fr'{street}\s{street_number}\s{city}\s{zip}',  # no name, but street number
+			fr'{street_number}\s{street}\s{city}\s{zip}',  # no name, but french street number
+			fr'{street_number}\s{street}\s{city}\s{uk_zip}',  # fallback - only street and uk city
+			fr'{street_number}\s{street}\s{uk_zip}\s{city}',  # fallback - only street and uk city
+			fr'{street}\s{street_number}\s{uk_zip}\s{city}',  # fallback - only street and uk city
+
+			# no number but zip
+			fr'{street}\s{zip}\s{city}',  # no name, no street number
+			fr'{street}\s{uk_zip}\s{city}',  # fallback - only street and uk city
+			fr'{street}\s{city}\s{uk_zip}',  # fallback - only street and uk city
+
+			# no zip
+			fr'{street}\s{street_number}\s{city}',   # fallback - only street and city
+
+			fr'{street_number}\s{street}\s{city}',  # fallback - only street and city
+
+			# last fallback
+			fr'{street}\s{city}',  # fallback - only street and city
+			fr'{zip}\s{city}',  # fallback - only zip and city
+			fr'{city}\s{zip}',  # fallback - only zip and city
+			fr'{city}\s{uk_zip}',
+			fr'{uk_zip}\s{city}',
+		]
+		# self.pattern_dict = sorted(self.patterns, key=lambda x: len(x), reverse=True)
+		self.regex_list = list(map(re.compile, self.pattern_list))
+
+		self.skip_tokens = [
+			'ort', 'plz', 'name', 'vorname', 'geburtsdatum', 'land', 'firmenname', 'hausummer',
+			'rechnungsadresse:', 'lieferadresse:', 'nr', 'firma', 'name/firma', 'vorname:',
+			'lleferadresse', 'leferadresse', 'lieferadresse', 'kunden-daten', 'absender',
+			'unverbindliche', 'mitarbeiter', 'abholdatum', 'liefer-', 'versandadresse', 'kundencaten',
+			'mharbelterin', 'mitarbelters', 'adresse', 'livraison', 'delours', 'mitarbeiters',
+			'nutzer', 'vor-', 'nachname', 'ceschaftsalhaer', 'kundendaten', 'leasingrate', 'inkl',
+			'-rechnungsadresse', 'leasingnehmer', 'untemehmensname', 'hausnummer', 'firmencode',
+			'facturation', 'adrosse', 'diagnostictool', 'leasingnutzer', 'arbeitgeber', 'sachbearbeiter',
+			'geschiftsfdhrerinnen', 'livralson', 'lueferanschrift', 'kostenstelle', 'selbstabholer',
+			'auftrag', 'erstellungsdatum', 'jobrad-angebotscode', 'licferadresse', 'bestelldbersicht',
+			'rundum-schutz', 'erstinspektion', 'emall-adresse', 'leasingobjekt', 'postleitzahl',
+			'postcode', 'herzlichen', 'dank', 'artikel-nr', 'aussteller', 'empfanger', 'buchung',
+			'kundenservice', 'lieferadresso', 'leistung', 'lieferdatum', 'wertgarantie', 'lieferdatum',
+			'vorabdberweisung', 'rechniingsdatum', 'bearbeiter', 'emait', 'licteradresse', 'anschrift',
+			'leasingnutzer', 'ueferscheln',
+			#
+			'-', '~', '°', '—', '»'
+		]
+
+		self.ukzipChecker = UKZipChecker()
+
+		self.streetTokenizer = streetTokenizer
+		self.cityTokenizer = cityTokenizer
+
+		# find duplicate tokens in street and city
+		self.combinedStreetCityTokenizer = CombinedStreetCityTokenizer(streetTokenizer, cityTokenizer)
+		self.combinedStreetCityTokenizer.populate()
+
+	def _name_by_id(self, name_id: int) -> str:
+		for key, value in self.nameTokenizer.name_dict.items():
+			if value == name_id:
+				return key
+
+		raise Exception(f'Cannot find name_id {name_id}')
+
+	def _street_by_id(self, street_id: int) -> str:
+		for key, value in self.streetTokenizer.street_dict.items():
+			if value == street_id:
+				return key
+
+		raise Exception(f'Cannot find street_id {street_id}')
+
+	def embed(self, text: str) -> str:
+		self.combinedStreetCityTokenizer.populate()  # if no already
+
+		tmp_text = _clean_string(text)
+
+		if len(tmp_text) == 0:
+			return ''
+
+		tmp_tokens = []
+		for token in tmp_text.split(' '):
+			if token in self.skip_tokens:
+				continue
+
+			tmp_tokens.append(token)
+
+		if len(tmp_tokens) == 0:
+			return ''
+
+		customer_words = ' '.join(tmp_tokens)
+
+		# check combined street/city names
+		customer_words = self.combinedStreetCityTokenizer.embed(customer_words)
+
+		# post-processing - remove ZIP(ZIP(53501))
+		zip_pattern = r'ZIP\(ZIP\((?P<zip>[0-9]+)\)\)'
+		zip_regex = re.compile(zip_pattern, re.IGNORECASE)
+
+		while 'ZIP(ZIP(' in customer_words:
+			for match in zip_regex.finditer(customer_words):
+				match_dict = match.groupdict()
+				zip_code = match_dict['zip']
+				customer_words = zip_regex.sub(f'ZIP({zip_code})', customer_words, 1)
+
+		if ' d-ZIP(' in customer_words:
+			print(f'Warning: Found d-ZIP in "{customer_words}" - replacing with ZIP')
+			customer_words = customer_words.replace(' d-ZIP(', ' ZIP(')
+
+		return customer_words
+
+	def match(self, text, verbose: bool=False) -> Optional[AddressObject]:
+		text = (' ' + text + ' ').replace(' n ', ' ').strip()  # get rid of single 'n' words
+		text = (' ' + text).replace(' nr°', ' ').strip()  # nr°
+		text = (' ' + text + ' ').replace(' snc ', ' ').strip()  # snc
+
+		# fix double spaces bug - https://stackoverflow.com/questions/2077897/substitute-multiple-whitespace-with-single-whitespace-in-python
+		text = ' '.join(text.split())
+
+		for regex_index, regex in enumerate(self.regex_list):
+			for match in regex.finditer(text):
+				match_dict = match.groupdict()
+
+				# print(f'DEBUG: found match: {regex_index} - {regex.pattern}')
+
+				if verbose:
+					print(f'match_dict: {match_dict}', flush=True)
+
+				obj = AddressObject()
+				if 'name' in match_dict:
+					name_id = int(match_dict['name'])
+					obj.name = self._name_by_id(name_id).title()
+					obj.name_id = name_id
+				obj.surname = match_dict['surname'] if 'surname' in match_dict else None
+
+				# handle street
+				if 'street' in match_dict:
+					street_id = int(match_dict['street'])
+					obj.street = self._street_by_id(street_id).title()
+					obj.street_id = street_id
+				obj.streetNumber = match_dict['street_number'] if 'street_number' in match_dict else None
+
+				# print(f'DEBUG: zip={match_dict.get("zip", None)}, zipuk={match_dict.get("zipuk", None)}')
+				obj.zip_code = match_dict['zip'] if 'zip' in match_dict else None
+
+				# uk zip
+				if obj.zip_code is None and 'zipuk' in match_dict:
+					zipuk = match_dict['zipuk']
+
+					# need to verify uk zip here (and not when the embedding is done)
+					if 'city' in match_dict:
+						city_id = int(match_dict['city'])
+						city_uk = City.objects.get(id=city_id)
+
+						if city_uk.zip_code is None or city_uk.zip_code.strip() == '':
+							print(f'Warning: UK city {city_uk.name} has no zip code')
+							return None
+
+						city_match = self.ukzipChecker.match(zipuk, city_uk.zip_code) > 0.9
+
+						if city_match and city_uk.country.id not in uk_zip_country_ids:
+							raise Exception(f'Warning: UK zip {zipuk} in non-UK city {city_uk.name} ({city_uk.country.name}) in "{text}"')
+							return None
+						elif city_match:
+							# print(f'Debug: Found uk zip match: {zipuk} in {city_uk.zip_code}')
+							obj.zip_code = zipuk.upper()
+						else:
+							value = self.ukzipChecker.match(zipuk, city_uk.zip_code)
+							print(f'self.ukzipChecker.match({zipuk}, {city_uk.zip_code}) => {value}')
+							# raise Exception(f'Warning: uk zip NOT matched: {zipuk} in {city_uk.zip_code} for {city_uk.name} in "{text}"')
+							return None
+					else:
+						print(f'Warning: UK zip {zipuk} found, but no city in "{text}"')
+
+				# handle city
+				if 'city' in match_dict:
+					try:
+						city_id = int(match_dict['city'])
+						city_name = City.objects.get(id=city_id).name
+						obj.city = city_name
+						obj.city_id = city_id
+					except City.DoesNotExist:
+						print(f'Warning: City id {city_id} not found')
+						return None
+				elif 'zip' in match_dict:
+					zip_code = match_dict['zip']
+					city_id = self.cityTokenizer.city_id_by_zid(zip_code)
+					if city_id is not None:
+						city_name = self.cityTokenizer.city_by_id(city_id)
+						unmapped_city_name = self.cityTokenizer.tokenize_city_name(city_name)  # map alternative name back to original
+						obj.city = city_name if unmapped_city_name is None else unmapped_city_name
+						obj.city_id = city_id
+
+				# obj.country = city.country.name
+
+				# handle ibd
+				if 'ibd' in match_dict:
+					ibd_id = int(match_dict['ibd'])
+					# print(f'Found IBD: {ibd_id}')
+					ibd = self._ibd_by_id(ibd_id)
+					obj.ibd = ibd.name
+					obj.ibd_id = ibd_id
+
+					if obj.city is None and ibd.city is not None:
+						obj.city = ibd.city.name
+
+					if obj.street is None and ibd.street is not None:
+						obj.street = ibd.street.name
+						obj.street_id = ibd.street.id
+
+					if obj.streetNumber is None and ibd.street_number is not None:
+						obj.streetNumber = ibd.street_number
+
+					if obj.zip_code is None and ibd.zip_code is not None:
+						print(f'DEBUG: take over zip from ibd: {ibd.zip_code}')
+						obj.zip_code = ibd.zip_code
+
+				if verbose:
+					print(f'Matched pattern {regex_index}', flush=True)
+
+				return obj
 
 		return None

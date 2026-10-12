@@ -38,3 +38,6 @@ migrate: venv
 createsuperuser: venv
 	./$(VENV)/bin/python manage.py createsuperuser
 # mrommel + vFfF9hf07fHr14cL
+
+refresh_tokenizers: venv
+	./$(VENV)/bin/python manage.py refresh_tokenizers

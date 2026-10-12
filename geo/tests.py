@@ -40,21 +40,21 @@ class GeocodeTests(TestCase):
 		# Simulate structured omlx output; the view must resolve names using tokenizers.
 		parts = {key: '' for key in ('street', 'house_number', 'city', 'county',
 		                            'state', 'country', 'postal_code')}
-		for name in ('Unter den Linden', 'Linden Avenue', 'Market Street', 'No Coordinates'):
+		for name in ('Unter den Linden', 'Linden Avenue', 'Market Street', 'No Coordinates', 'Voorstraat'):
 			if name in text:
 				parts['street'] = name
 				break
-		for name in ('Berlin', 'Berlyn', 'Munich', 'Paris', 'Unknown', 'No Such City'):
+		for name in ('Berlin', 'Berlyn', 'Munich', 'Paris', 'Unknown', 'No Such City', 'Woudenberg'):
 			if name in text:
 				parts['city'] = name
 				break
-		for name in ('Deutschland', 'Germany', 'France', 'DE'):
+		for name in ('Deutschland', 'Germany', 'France', 'Netherlands', 'DE'):
 			if name in text.split(', ') or text.endswith(name):
 				parts['country'] = name
 		for name in ('Texas',):
 			if name in text:
 				parts['state'] = name
-		for zip_code in ('10115', '80331', '99999'):
+		for zip_code in ('10115', '80331', '99999', '3931HC'):
 			if zip_code in text:
 				parts['postal_code'] = zip_code
 		return parts
@@ -64,6 +64,7 @@ class GeocodeTests(TestCase):
 		cls.germany = Country.objects.create(name='Germany', iso2='DE', zips_use_range=True)
 		AlternativeCountryName.objects.create(country=cls.germany, name='Deutschland')
 		cls.france = Country.objects.create(name='France')
+		cls.netherlands = Country.objects.create(name='Netherlands', iso2='NL')
 		cls.berlin_state = State.objects.create(name='Berlin', country=cls.germany)
 		cls.texas = State.objects.create(name='Texas', country=cls.germany)
 		cls.berlin = City.objects.create(name='Berlin', country=cls.germany,
@@ -71,6 +72,8 @@ class GeocodeTests(TestCase):
 		AlternativeCityName.objects.create(city=cls.berlin, name='Berlyn')
 		cls.munich = City.objects.create(name='Munich', country=cls.germany,
 		                                 zip_code='80000-80999', lat=48.137, lng=11.575)
+		cls.woudenberg = City.objects.create(name='Woudenberg', country=cls.netherlands,
+		                                     zip_code='3711,3931', lat=52.0821751, lng=5.4265952)
 		City.objects.create(name='Paris', country=cls.france, lat=48.8566, lng=2.3522)
 		cls.unknown = City.objects.create(name='Unknown', country=cls.germany)
 		cls.linden = StreetName.objects.create(name='Unter den Linden')
@@ -79,6 +82,7 @@ class GeocodeTests(TestCase):
 		cls.shared = StreetName.objects.create(name='Market Street')
 		cls.shared.cities.add(cls.berlin, cls.munich)
 		StreetName.objects.create(name='No Coordinates').cities.add(cls.unknown)
+		StreetName.objects.create(name='Voorstraat').cities.add(cls.woudenberg)
 		finish_population()
 
 	def setUp(self):
@@ -108,6 +112,12 @@ class GeocodeTests(TestCase):
 		self.assertEqual(self.lookup('10115 Berlin, Germany').json()['results'][0]['city'], 'Berlin')
 		self.assertEqual(self.lookup('80331 Munich').json()['results'][0]['city'], 'Munich')
 		self.assertEqual(self.lookup('99999 Berlin').json()['results'], [])
+
+	def test_dutch_postal_code_prefix(self):
+		results = self.lookup('Voorstraat 53, 3931HC Woudenberg').json()['results']
+		self.assertEqual(len(results), 1)
+		self.assertEqual(results[0]['street'], 'Voorstraat')
+		self.assertEqual(results[0]['city'], 'Woudenberg')
 
 	def test_no_match_or_coordinates(self):
 		self.assertEqual(self.lookup('Unknown').json()['results'], [])

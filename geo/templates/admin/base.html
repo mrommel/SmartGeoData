@@ -3,6 +3,7 @@
 <html lang="{{ LANGUAGE_CODE|default:"en-us" }}" dir="{{ LANGUAGE_BIDI|yesno:'rtl,ltr,auto' }}">
 <head>
 <title>{% block title %}{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="{% static 'geo/favicon.svg' %}">
 <link rel="stylesheet" href="{% static "css/admin.css" %}">
 <link rel="stylesheet" href="{% block stylesheet %}{% static "admin/css/base.css" %}{% endblock %}">
 {% block dark-mode-vars %}
