@@ -12,6 +12,12 @@ def geocode_page(request):
 
 
 @require_GET
+def mcp_integration_page(request):
+	"""Explain how to connect an MCP client to SmartGeoData."""
+	return render(request, 'geo/mcp_integration.html')
+
+
+@require_GET
 def tokenizer_status(request):
 	return JsonResponse(population_status())
 

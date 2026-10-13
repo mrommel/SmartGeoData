@@ -26,6 +26,8 @@
     <h1>Geocode an address</h1>
     <p>Enter one city or street address to find matching city coordinates.</p>
     <p>Using the API? <a href="{% url 'swagger-ui' %}">View the Swagger documentation</a>.</p>
+    <p>Want to integrate with an MCP client? See <a href="{% url 'mcp-integration' %}">How to integrate geocoding MCP</a>.</p>
+    <p>Add new address information? Edit address data in the <a href="/admin" target="_blank">admin</a>.</p>
     <form id="geocode-form">
         <label for="address">Address</label>
         <input id="address" name="text" type="text" maxlength="255" required autocomplete="street-address"

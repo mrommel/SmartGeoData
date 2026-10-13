@@ -1,0 +1,57 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="{% static 'geo/favicon.svg' %}">
+    <title>How to integrate geocoding MCP | SmartGeoData</title>
+    <style>
+        body { font: 1rem/1.5 system-ui, sans-serif; max-width: 48rem; margin: 3rem auto; padding: 0 1rem; color: #202833; }
+        h1, h2 { line-height: 1.2; }
+        pre { padding: 1rem; overflow-x: auto; background: #f1f3f6; border-radius: .5rem; }
+        code { overflow-wrap: anywhere; }
+    </style>
+</head>
+<body>
+<main>
+    <p><a href="{% url 'geocode-page' %}">Back to geocoding</a></p>
+    <h1>How to integrate geocoding MCP</h1>
+    <p>SmartGeoData exposes <code>geocode_address(text)</code> and <code>geocoding_health()</code> to MCP clients. Geocoding returns up to 10 matches with city-level coordinates, not exact house coordinates.</p>
+
+    <h2>Start the services</h2>
+    <p>From the project directory, install dependencies and migrate the database, then start Django and the tokenizer worker in separate terminals. Configure a running omlx server and add geographic data to get geocoding results.</p>
+    <pre><code>make venv
+make migrate
+make run</code></pre>
+    <pre><code>./.venv/bin/python manage.py db_worker</code></pre>
+    <p>The Django API runs at <code>http://127.0.0.1:9112</code> by default. The MCP process calls this API; it does not start Django, the worker, or omlx.</p>
+
+    <h2>Option 1: Streamable HTTP</h2>
+    <p>Start the MCP server in another terminal:</p>
+    <pre><code>make run_mcp</code></pre>
+    <p>In an MCP client that supports Streamable HTTP, configure the server URL as <code>http://127.0.0.1:9113/mcp</code>. This endpoint is for MCP clients, not a browser page. Check both services:</p>
+    <pre><code>curl -fsS http://127.0.0.1:9113/health
+curl -i http://127.0.0.1:9112/api/health/</code></pre>
+    <p>The MCP health endpoint checks its process; the API health endpoint returns HTTP 503 until the tokenizers are ready.</p>
+
+    <h2>Option 2: stdio</h2>
+    <p>For clients that launch local MCP servers, use a configuration like this. Replace <code>/path/to/SmartGeoData</code> with the absolute path to your checkout:</p>
+    <pre><code>{
+  "mcpServers": {
+    "smartgeodata": {
+      "command": "/path/to/SmartGeoData/.venv/bin/python",
+      "args": ["/path/to/SmartGeoData/geo/mcp_server.py"],
+      "env": {
+        "SMARTGEODATA_API_URL": "http://127.0.0.1:9112"
+      }
+    }
+  }
+}</code></pre>
+    <p>Consult your MCP client's documentation for where to put its configuration. Django and the worker must still be running.</p>
+
+    <h2>Configuration and safety</h2>
+    <p><code>SMARTGEODATA_API_URL</code> sets the Django base URL for either transport (default <code>http://127.0.0.1:9112</code>). For HTTP, <code>SMARTGEODATA_MCP_HOST</code> and <code>SMARTGEODATA_MCP_PORT</code> override the default bind address and port (<code>127.0.0.1:9113</code>). Keep the MCP HTTP server on localhost unless you provide authentication and transport security.</p>
+</main>
+</body>
+</html>

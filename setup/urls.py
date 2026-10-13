@@ -24,10 +24,11 @@ from geo.autocomplete import GeoAutocomplete
 from geo.api import geocode, create_city, create_street
 from geo.models import City, Country, County, State, StreetName
 from geo.openapi import openapi_schema, swagger_ui
-from geo.views import geocode_page, health, tokenizer_status
+from geo.views import geocode_page, health, mcp_integration_page, tokenizer_status
 
 urlpatterns = ([
     path('', geocode_page, name='geocode-page'),
+    path('mcp-integration/', mcp_integration_page, name='mcp-integration'),
     path('admin/', admin.site.urls),
     path('api/geocode/', geocode, name='geocode'),
 	path('api/create_city', create_city, name='create_city'),

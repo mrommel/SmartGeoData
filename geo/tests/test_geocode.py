@@ -31,7 +31,18 @@ class GeocodePageTests(SimpleTestCase):
 		self.assertContains(response, 'maxlength="255"')
 		self.assertContains(response, reverse('geocode'))
 		self.assertContains(response, f'href="{reverse("swagger-ui")}"')
+		self.assertContains(response, f'href="{reverse("mcp-integration")}"')
 		self.assertEqual(self.client.post(reverse('geocode-page')).status_code, 405)
+
+	def test_mcp_integration_page(self):
+		response = self.client.get(reverse('mcp-integration'))
+		self.assertEqual(response.status_code, 200)
+		self.assertTemplateUsed(response, 'geo/mcp_integration.html')
+		self.assertContains(response, 'How to integrate geocoding MCP')
+		self.assertContains(response, 'http://127.0.0.1:9113/mcp')
+		self.assertContains(response, 'geocode_address(text)')
+		self.assertContains(response, f'href="{reverse("geocode-page")}"')
+		self.assertEqual(self.client.post(reverse('mcp-integration')).status_code, 405)
 
 
 class GeocodeTests(TestCase):
