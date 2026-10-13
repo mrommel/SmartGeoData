@@ -9,15 +9,16 @@ class OpenAPITests(SimpleTestCase):
 		self.assertEqual(response['Content-Type'], 'application/json')
 		spec = response.json()
 		self.assertEqual(spec['openapi'], '3.0.3')
-		self.assertEqual(set(spec['paths']), {reverse('geocode'), reverse('tokenizer-status')})
+		self.assertEqual(set(spec['paths']), {reverse('geocode'), reverse('tokenizer-status'), reverse('health')})
 		geocode = spec['paths'][reverse('geocode')]['get']
 		self.assertEqual(geocode['parameters'][0]['name'], 'text')
 		self.assertTrue(geocode['parameters'][0]['required'])
 		self.assertEqual(geocode['parameters'][0]['schema']['maxLength'], 255)
 		self.assertEqual(set(geocode['responses']), {'200', '400', '503'})
 		self.assertEqual(spec['components']['schemas']['GeocodeResult']['properties']['lat']['type'], 'number')
-		self.assertEqual(set(spec['components']['schemas']['TokenizerStatus']['properties']['tokenizers']['required']),
+		self.assertEqual(set(spec['components']['schemas']['TokenizerStates']['required']),
 		                 {'city', 'street'})
+		self.assertEqual(set(spec['paths'][reverse('health')]['get']['responses']), {'200', '503'})
 		self.assertEqual(self.client.post(reverse('openapi-schema')).status_code, 405)
 
 	def test_swagger_ui_uses_local_schema(self):
@@ -27,3 +28,4 @@ class OpenAPITests(SimpleTestCase):
 		self.assertContains(response, 'swagger-ui-bundle.js')
 		self.assertContains(response, reverse('openapi-schema'))
 		self.assertEqual(self.client.post(reverse('swagger-ui')).status_code, 405)
+

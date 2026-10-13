@@ -49,6 +49,18 @@ def openapi_schema(request):
 					}},
 				},
 			},
+			reverse('health'): {
+				'get': {
+					'summary': 'Check geocoding readiness',
+					'description': 'Ready when city and street tokenizers have finished; does not probe the external omlx model.',
+					'responses': {
+						'200': {'description': 'Tokenizers are ready.',
+						        'content': {'application/json': {'schema': {'$ref': '#/components/schemas/Health'}}}},
+						'503': {'description': 'Tokenizers are not ready or the database is unavailable.',
+						        'content': {'application/json': {'schema': {'$ref': '#/components/schemas/Health'}}}},
+					},
+				},
+			},
 		},
 		'components': {'schemas': {
 			'GeocodeResult': {
@@ -70,10 +82,20 @@ def openapi_schema(request):
 				'type': 'object', 'required': ['status', 'tokenizers'],
 				'properties': {
 					'status': {'type': 'string', 'enum': states},
-					'tokenizers': {'type': 'object', 'required': ['city', 'street'], 'properties': {
-						'city': {'type': 'string', 'enum': states},
-						'street': {'type': 'string', 'enum': states},
-						}},
+					'tokenizers': {'$ref': '#/components/schemas/TokenizerStates'},
+				},
+			},
+			'Health': {
+				'type': 'object', 'required': ['status'],
+				'properties': {
+					'status': {'type': 'string', 'enum': ['ready', 'unavailable']},
+					'tokenizers': {'$ref': '#/components/schemas/TokenizerStates'},
+				},
+			},
+			'TokenizerStates': {
+				'type': 'object', 'required': ['city', 'street'], 'properties': {
+					'city': {'type': 'string', 'enum': states},
+					'street': {'type': 'string', 'enum': states},
 				},
 			},
 		}},

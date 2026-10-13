@@ -1516,9 +1516,11 @@ class AddressPatternTokenizer:
 				if 'city' in match_dict:
 					try:
 						city_id = int(match_dict['city'])
-						city_name = City.objects.get(id=city_id).name
+						city = City.objects.get(id=city_id)
+						city_name = city.name
 						obj.city = city_name
 						obj.city_id = city_id
+						obj.country = city.country.name if city.country is not None else None
 					except City.DoesNotExist:
 						print(f'Warning: City id {city_id} not found')
 						return None
@@ -1543,6 +1545,7 @@ class AddressPatternTokenizer:
 
 					if obj.city is None and ibd.city is not None:
 						obj.city = ibd.city.name
+						obj.country = ibd.country.name
 
 					if obj.street is None and ibd.street is not None:
 						obj.street = ibd.street.name

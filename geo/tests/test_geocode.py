@@ -166,6 +166,26 @@ class TokenizerStatusTests(TestCase):
 	def status(self):
 		return self.client.get(reverse('tokenizer-status'))
 
+	def test_health_readiness(self):
+		response = self.client.get(reverse('health'))
+		self.assertEqual(response.status_code, 503)
+		self.assertEqual(response.json(), {
+			'status': 'unavailable', 'tokenizers': {'city': 'pending', 'street': 'pending'},
+		})
+		finish_population()
+		response = self.client.get(reverse('health'))
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json(), {
+			'status': 'ready', 'tokenizers': {'city': 'completed', 'street': 'completed'},
+		})
+		self.assertEqual(self.client.post(reverse('health')).status_code, 405)
+
+	def test_health_database_unavailable(self):
+		with patch('geo.views.population_status', side_effect=RuntimeError('database offline')):
+			response = self.client.get(reverse('health'))
+		self.assertEqual(response.status_code, 503)
+		self.assertEqual(response.json(), {'status': 'unavailable'})
+
 	def test_startup_does_not_requeue_existing_or_failed_tasks(self):
 		start_population()
 		start_population()
@@ -274,5 +294,6 @@ class ExtractionTests(SimpleTestCase):
 			with self.assertRaises(AddressExtractionError):
 				extract_address('Berlin')
 		self.assertEqual(send.call_count, 1)
+
 
 

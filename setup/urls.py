@@ -24,7 +24,7 @@ from geo.autocomplete import GeoAutocomplete
 from geo.api import geocode, create_city, create_street
 from geo.models import City, Country, County, State, StreetName
 from geo.openapi import openapi_schema, swagger_ui
-from geo.views import geocode_page, tokenizer_status
+from geo.views import geocode_page, health, tokenizer_status
 
 urlpatterns = ([
     path('', geocode_page, name='geocode-page'),
@@ -33,6 +33,7 @@ urlpatterns = ([
 	path('api/create_city', create_city, name='create_city'),
 	path('api/create_street', create_street, name='create_street'),
     path('api/tokenizer-status/', tokenizer_status, name='tokenizer-status'),
+    path('api/health/', health, name='health'),
     path('api/openapi.json', openapi_schema, name='openapi-schema'),
     path('swagger/', swagger_ui, name='swagger-ui'),
     path('autocomplete/state/', staff_member_required(GeoAutocomplete.as_view(model=State)), name='state_autocomplete'),

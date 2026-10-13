@@ -15,3 +15,17 @@ def geocode_page(request):
 def tokenizer_status(request):
 	return JsonResponse(population_status())
 
+
+@require_GET
+def health(request):
+	"""Report whether the geocoding tokenizers are ready to serve requests."""
+	try:
+		population = population_status()
+	except Exception:
+		return JsonResponse({'status': 'unavailable'}, status=503)
+	ready = population['status'] == 'completed'
+	return JsonResponse({
+		'status': 'ready' if ready else 'unavailable',
+		'tokenizers': population['tokenizers'],
+	}, status=200 if ready else 503)
+

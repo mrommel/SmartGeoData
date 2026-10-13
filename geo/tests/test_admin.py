@@ -57,3 +57,4 @@ class AdminAutocompleteTests(TestCase):
 		response = self.client.get(reverse('county_autocomplete'),
 		                           {'q': 'Mitte', 'forward': json.dumps({'state': 999999})})
 		self.assertEqual(response.json()['results'], [])
+

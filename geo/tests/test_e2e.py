@@ -8,7 +8,7 @@ from django.urls import reverse
 
 from geo.models import City, Country, State, StreetName
 from geo.tasks import _loaded
-from geo.tests import finish_population
+from geo.tests.test_geocode import finish_population
 
 
 @tag('e2e')
@@ -57,3 +57,4 @@ class LiveOmlxGeocodeTests(TestCase):
 					'state': 'Berlin' if city == 'Berlin' else 'New York' if city == 'New York' else None,
 					'country': country, 'zip_code': zip_code, 'lat': lat, 'lng': lng,
 				}])
+
