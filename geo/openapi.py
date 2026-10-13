@@ -68,6 +68,7 @@ def openapi_schema(request):
 				'required': ['city', 'county', 'state', 'country', 'zip_code', 'lat', 'lng'],
 				'properties': {
 					'street': {'type': 'string', 'description': 'Included only for street matches.'},
+					'street_number': {'type': 'string', 'description': 'House number or range, when present with a street match.'},
 					'city': {'type': 'string'},
 					'county': {'type': 'string', 'nullable': True},
 					'state': {'type': 'string', 'nullable': True},

@@ -1296,19 +1296,22 @@ class CombinedStreetCityTokenizer:
 			self._populated = True
 
 	def embed(self, text: str) -> str:
+		# Protect a city name shared with a street when its preceding ZIP selects
+		# exactly one city. Only replace that occurrence: the same name may also
+		# appear earlier in the address as a genuine street.
+		for name, (_, cities) in self.combined_dict.items():
+			pattern = re.compile(fr'(?<!\S)(?P<zip>\d{{4,5}})\s+{re.escape(name).replace("\\ ", r"\s+")}(?!\S)')
+			def resolve(match):
+				zip_code = match.group('zip')
+				matching_ids = {city_id for city_id, _, city_zips, _, _ in cities
+				                if city_zips and zip_code in AmbiguousCity(city_id, name, 0, city_zips).zip_list()}
+				if len(matching_ids) != 1:
+					return match.group(0)
+				return f'ZIP({zip_code}) CITY({matching_ids.pop()})'
+			text = pattern.sub(resolve, text)
+
 		for length in reversed(range(self.max_length + 1)):
-			# 1st: check combined
-			for regex, key in self.combined_regex.items():
-				if len(key) != length:
-					continue
-
-				for match in regex.finditer(text):
-					match_dict = match.groupdict()
-					print(f'Todo: ### Match found by CombinedStreetCityTokenizer: {match_dict} in "{text}"')
-					# print(f'### regex: "{regex}" - {key}')
-					# text = regex.sub(f'STREET({key})', text, 1)  # only first occurrence
-
-			# 2nd: check street
+			# Check street before city for names without a ZIP-backed resolution.
 			for streetName, regex_item in zip(self.streetTokenizer.street_dict.keys(), self.streetTokenizer.street_regex.items()):
 			# for regex, key in self.streetTokenizer.street_regex.items():
 				regex, streetId = regex_item
@@ -1318,7 +1321,7 @@ class CombinedStreetCityTokenizer:
 				# print(f'### regex: "{regex}" - {key}')
 				text = regex.sub(f'STREET({streetId})', text, 1)  # only first occurrence
 
-			# 3rd: check city
+			# Check city.
 			text = self.cityTokenizer.embed(text, length)
 
 		return text

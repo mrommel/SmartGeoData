@@ -560,13 +560,24 @@ def geocode(request):
 	print(f'Address match: {address_match}')
 
 	if address_match is not None:
+		address_city = City.objects.select_related('country', 'county', 'state').filter(
+			pk=address_match.city_id).first()
+		if (address_city is None or address_city.lat is None or address_city.lng is None
+		        or (address_match.zip_code and not _has_zip(address_city, address_match.zip_code))
+		        or any(int(country_id) != address_city.country_id for country_id in
+		               re.findall(r'COUNTRY\((\d+)\)', embedded_text))
+		        or (address_match.street_id and not StreetCityMembership.objects.filter(
+				city_id=address_match.city_id, street_name_id=address_match.street_id).exists())):
+			address_match = None
+
+	if address_match is not None:
 		logger.info('Matched address: %r', address_match)
 		address_street = StreetName.objects.get(id=address_match.street_id) if address_match.street_id else None
-		address_city = City.objects.get(id=address_match.city_id)
 
 		return JsonResponse({'results': [
 			{
 				**({'street': address_street.name} if address_street else {}),
+				**({'street_number': address_match.streetNumber} if address_street and address_match.streetNumber else {}),
 				'city': address_city.name,
 				'county': address_city.county.name if address_city.county else None,
 				'state': address_city.state.name if address_city.state else None,
@@ -636,6 +647,7 @@ def geocode(request):
 		return JsonResponse({'results': [
 			{
 				**({'street': street} if street else {}),
+				**({'street_number': parts['house_number']} if street and parts['house_number'] else {}),
 				'city': city.name,
 				'county': city.county.name if city.county else None,
 				'state': city.state.name if city.state else None,

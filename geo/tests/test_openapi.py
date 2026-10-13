@@ -16,6 +16,8 @@ class OpenAPITests(SimpleTestCase):
 		self.assertEqual(geocode['parameters'][0]['schema']['maxLength'], 255)
 		self.assertEqual(set(geocode['responses']), {'200', '400', '503'})
 		self.assertEqual(spec['components']['schemas']['GeocodeResult']['properties']['lat']['type'], 'number')
+		self.assertEqual(spec['components']['schemas']['GeocodeResult']['properties']['street_number']['type'], 'string')
+		self.assertNotIn('street_number', spec['components']['schemas']['GeocodeResult']['required'])
 		self.assertEqual(set(spec['components']['schemas']['TokenizerStates']['required']),
 		                 {'city', 'street'})
 		self.assertEqual(set(spec['paths'][reverse('health')]['get']['responses']), {'200', '503'})

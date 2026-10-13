@@ -51,7 +51,7 @@ class GeocodeTests(TestCase):
 		# Simulate structured omlx output; the view must resolve names using tokenizers.
 		parts = {key: '' for key in ('street', 'house_number', 'city', 'county',
 		                            'state', 'country', 'postal_code')}
-		for name in ('Unter den Linden', 'Linden Avenue', 'Market Street', 'No Coordinates', 'Voorstraat'):
+		for name in ('Unter den Linden', 'Linden Avenue', 'Market Street', 'No Coordinates', 'Voorstraat', 'Uhlstr'):
 			if name in text:
 				parts['street'] = name
 				break
@@ -65,7 +65,7 @@ class GeocodeTests(TestCase):
 		for name in ('Texas',):
 			if name in text:
 				parts['state'] = name
-		for zip_code in ('10115', '80331', '99999', '3931HC'):
+		for zip_code in ('10115', '80331', '99999', '3931HC', '50321', '68782'):
 			if zip_code in text:
 				parts['postal_code'] = zip_code
 		return parts
@@ -83,6 +83,12 @@ class GeocodeTests(TestCase):
 		AlternativeCityName.objects.create(city=cls.berlin, name='Berlyn')
 		cls.munich = City.objects.create(name='Munich', country=cls.germany,
 		                                 zip_code='80000-80999', lat=48.137, lng=11.575)
+		cls.bruehl = City.objects.create(name='Brühl (Rheinland)', country=cls.germany,
+		                                  zip_code='50321', lat=50.829, lng=6.904)
+		cls.bruehl_baden = City.objects.create(name='Brühl (Baden)', country=cls.germany,
+		                                        zip_code='68782', lat=49.396, lng=8.534)
+		for city in (cls.bruehl, cls.bruehl_baden):
+			AlternativeCityName.objects.create(city=city, name='Brühl', ambiguous=True)
 		cls.woudenberg = City.objects.create(name='Woudenberg', country=cls.netherlands,
 		                                     zip_code='3711,3931', lat=52.0821751, lng=5.4265952)
 		City.objects.create(name='Paris', country=cls.france, lat=48.8566, lng=2.3522)
@@ -94,6 +100,10 @@ class GeocodeTests(TestCase):
 		cls.shared.cities.add(cls.berlin, cls.munich)
 		StreetName.objects.create(name='No Coordinates').cities.add(cls.unknown)
 		StreetName.objects.create(name='Voorstraat').cities.add(cls.woudenberg)
+		uhlstrasse = StreetName.objects.create(name='Uhlstraße')
+		uhlstrasse.cities.add(cls.bruehl)
+		AlternativeStreetName.objects.create(street=uhlstrasse, name='Uhlstr')
+		StreetName.objects.create(name='Brühl').cities.add(cls.berlin, cls.bruehl)
 		finish_population()
 
 	def setUp(self):
@@ -128,7 +138,32 @@ class GeocodeTests(TestCase):
 		results = self.lookup('Voorstraat 53, 3931HC Woudenberg').json()['results']
 		self.assertEqual(len(results), 1)
 		self.assertEqual(results[0]['street'], 'Voorstraat')
+		self.assertEqual(results[0]['street_number'], '53')
 		self.assertEqual(results[0]['city'], 'Woudenberg')
+
+	def test_zip_resolves_street_city_name_collision(self):
+		with patch('geo.api.extract_address', side_effect=AssertionError('unexpected LLM fallback')):
+			results = self.lookup('Uhlstr. 85-87, 50321 Brühl').json()['results']
+		self.assertEqual(len(results), 1)
+		self.assertEqual(results[0]['street'], 'Uhlstraße')
+		self.assertEqual(results[0]['street_number'], '85-87')
+		self.assertEqual(results[0]['city'], 'Brühl (Rheinland)')
+		self.assertEqual(results[0]['zip_code'], '50321')
+
+	def test_colliding_name_can_still_be_a_street(self):
+		with patch('geo.api.extract_address', side_effect=AssertionError('unexpected LLM fallback')):
+			results = self.lookup('Brühl 12, 10115 Berlin').json()['results']
+			both = self.lookup('Brühl 12, 50321 Brühl').json()['results']
+		self.assertEqual(results[0]['street'], 'Brühl')
+		self.assertEqual(results[0]['street_number'], '12')
+		self.assertEqual(results[0]['city'], 'Berlin')
+		self.assertEqual(both[0]['street'], 'Brühl')
+		self.assertEqual(both[0]['street_number'], '12')
+		self.assertEqual(both[0]['city'], 'Brühl (Rheinland)')
+
+	def test_direct_match_requires_matching_street_and_zip(self):
+		self.assertEqual(self.lookup('Uhlstr. 85-87, 68782 Brühl').json()['results'], [])
+		self.assertEqual(self.lookup('Uhlstr. 85-87, 50321 Berlin').json()['results'], [])
 
 	def test_no_match_or_coordinates(self):
 		self.assertEqual(self.lookup('Unknown').json()['results'], [])
@@ -139,10 +174,25 @@ class GeocodeTests(TestCase):
 		result = self.lookup('Unter den Linden 12, 10115 Berlin, Germany').json()['results']
 		self.assertEqual(len(result), 1)
 		self.assertEqual(result[0]['street'], 'Unter den Linden')
+		self.assertEqual(result[0]['street_number'], '12')
 		self.assertEqual(result[0]['city'], 'Berlin')
 		self.assertEqual((result[0]['lat'], result[0]['lng']), (52.52, 13.405))
 		self.assertEqual(self.lookup('Linden Avenue, Berlyn').json()['results'][0]['street'],
 		                 'Unter den Linden')
+		self.assertNotIn('street_number', self.lookup('Linden Avenue, Berlyn').json()['results'][0])
+
+	def test_fallback_returns_extracted_street_number(self):
+		parts = {key: '' for key in ('street', 'house_number', 'city', 'county',
+		                            'state', 'country', 'postal_code')}
+		parts.update(street='Market Street', house_number='85-87')
+		with patch('geo.api.extract_address', return_value=parts):
+			results = self.lookup('Market Street 85-87').json()['results']
+		self.assertEqual({item['city'] for item in results}, {'Berlin', 'Munich'})
+		self.assertTrue(all(item['street_number'] == '85-87' for item in results))
+		parts.update(street='', city='Berlin')
+		with patch('geo.api.extract_address', return_value=parts):
+			city_only = self.lookup('Berlin').json()['results'][0]
+		self.assertNotIn('street_number', city_only)
 
 	def test_street_only_and_shared_street(self):
 		self.assertEqual(self.lookup('Unter den Linden').json()['results'][0]['city'], 'Berlin')

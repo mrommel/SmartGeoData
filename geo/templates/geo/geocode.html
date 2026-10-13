@@ -69,7 +69,8 @@
             for (const match of matches) {
                 const item = document.createElement('li');
                 const heading = document.createElement('strong');
-                heading.textContent = [match.street, match.city].filter(Boolean).join(', ');
+                heading.textContent = [match.street && [match.street, match.street_number].filter(Boolean).join(' '), match.city]
+                    .filter(Boolean).join(', ');
                 item.append(heading);
                 const details = document.createElement('dl');
                 for (const [label, value] of [
