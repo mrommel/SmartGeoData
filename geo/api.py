@@ -12,7 +12,7 @@ from geo.forms import CreateCityForm, CreateStreetForm
 from geo.llm import AddressExtractionError, extract_address
 from geo.models import City, Country, County, State, StreetCityMembership, StreetName, AlternativeStreetName
 from geo.tasks import get_tokenizers
-from geo.tokenizer import AddressPatternTokenizer, AddressObject
+from geo.tokenizer import AddressPatternTokenizer, AddressObject, zip_matches_missing_zero
 from geo.utils import _clean_string, has_numbers
 
 logger = logging.getLogger(__name__)
@@ -44,14 +44,22 @@ def _has_zip(city, postal_code):
 		part = part.casefold()
 		if part == postal_code:
 			return True
+		if (city.country and (city.country.iso2 or '').casefold() == 'de'
+		        and zip_matches_missing_zero(postal_code, part)):
+			return True
 		if (city.country and (city.country.iso2 or '').casefold() == 'nl'
 		        and re.fullmatch(r'[1-9]\d{3}(?!sa|sd|ss)[a-z]{2}', postal_code)
 	        and part == postal_code[:4]):
 			return True
 		if city.country and city.country.zips_use_range and '-' in part:
 			start, separator, end = part.partition('-')
-			if separator and start.isdigit() and end.isdigit() and len(start) == len(end) == len(postal_code):
-				if start <= postal_code <= end:
+			candidate = postal_code
+			if (city.country.iso2 or '').casefold() == 'de' and len(start) == len(end) == 5 \
+			        and start.startswith('0') and len(postal_code) == 4 and postal_code.isascii() \
+			        and postal_code.isdigit():
+				candidate = '0' + postal_code
+			if separator and start.isdigit() and end.isdigit() and len(start) == len(end) == len(candidate):
+				if start <= candidate <= end:
 					return True
 	return False
 

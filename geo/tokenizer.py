@@ -15,6 +15,13 @@ from geo.utils import _clean_string, is_integer
 uk_zip_country_ids = [25, 27, 47, 53]  # IR, UK, CN, Guernsey
 
 
+def zip_matches_missing_zero(input_zip: str, stored_zip: str) -> bool:
+	return (len(input_zip) == 4 and input_zip.isascii() and input_zip.isdigit()
+	        and len(stored_zip) == 5 and stored_zip.startswith('0')
+	        and stored_zip.isascii() and stored_zip.isdigit()
+	        and stored_zip[1:] == input_zip)
+
+
 class AmbiguousCity:
 	def __init__(self, id: int, name: str, country_id: int, zip_code: str):
 		self.id = id
@@ -621,7 +628,8 @@ class CityTokenizer:
 					# print(f'Invalid zip code: "{zip_code}" in "{text}"')
 					continue
 
-				tmp_value = self.zipChecker.match(zip_code, token)
+				tmp_value = (1.0 if zip_matches_missing_zero(token, zip_code)
+				             else self.zipChecker.match(zip_code, token))
 
 				if tmp_value > best_value:
 					best_zip = zip_code
@@ -1303,11 +1311,13 @@ class CombinedStreetCityTokenizer:
 			pattern = re.compile(fr'(?<!\S)(?P<zip>\d{{4,5}})\s+{re.escape(name).replace("\\ ", r"\s+")}(?!\S)')
 			def resolve(match):
 				zip_code = match.group('zip')
-				matching_ids = {city_id for city_id, _, city_zips, _, _ in cities
-				                if city_zips and zip_code in AmbiguousCity(city_id, name, 0, city_zips).zip_list()}
-				if len(matching_ids) != 1:
+				matches = {city_id: stored_zip for city_id, _, city_zips, _, _ in cities if city_zips
+				           for stored_zip in AmbiguousCity(city_id, name, 0, city_zips).zip_list()
+				           if zip_code == stored_zip or zip_matches_missing_zero(zip_code, stored_zip)}
+				if len(matches) != 1:
 					return match.group(0)
-				return f'ZIP({zip_code}) CITY({matching_ids.pop()})'
+				matched_id, matched_zip = next(iter(matches.items()))
+				return f'ZIP({matched_zip}) CITY({matched_id})'
 			text = pattern.sub(resolve, text)
 
 		for length in reversed(range(self.max_length + 1)):

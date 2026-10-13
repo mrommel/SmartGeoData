@@ -83,6 +83,8 @@ class GeocodeTests(TestCase):
 		AlternativeCityName.objects.create(city=cls.berlin, name='Berlyn')
 		cls.munich = City.objects.create(name='Munich', country=cls.germany,
 		                                 zip_code='80000-80999', lat=48.137, lng=11.575)
+		cls.olbernhau = City.objects.create(name='Olbernhau', country=cls.germany,
+		                                    zip_code='09526', lat=50.659, lng=13.338)
 		cls.bruehl = City.objects.create(name='Brühl (Rheinland)', country=cls.germany,
 		                                  zip_code='50321', lat=50.829, lng=6.904)
 		cls.bruehl_baden = City.objects.create(name='Brühl (Baden)', country=cls.germany,
@@ -95,6 +97,7 @@ class GeocodeTests(TestCase):
 		cls.unknown = City.objects.create(name='Unknown', country=cls.germany)
 		cls.linden = StreetName.objects.create(name='Unter den Linden')
 		cls.linden.cities.add(cls.berlin)
+		StreetName.objects.create(name='Am Gessingplatz').cities.add(cls.olbernhau)
 		AlternativeStreetName.objects.create(street=cls.linden, name='Linden Avenue')
 		cls.shared = StreetName.objects.create(name='Market Street')
 		cls.shared.cities.add(cls.berlin, cls.munich)
@@ -133,6 +136,34 @@ class GeocodeTests(TestCase):
 		self.assertEqual(self.lookup('10115 Berlin, Germany').json()['results'][0]['city'], 'Berlin')
 		self.assertEqual(self.lookup('80331 Munich').json()['results'][0]['city'], 'Munich')
 		self.assertEqual(self.lookup('99999 Berlin').json()['results'], [])
+
+	def test_gessingplatz_missing_postal_leading_zero(self):
+		with patch('geo.api.extract_address', side_effect=AssertionError('unexpected LLM fallback')):
+			results = self.lookup('Am Gessingplatz 4, 9526 Olbernhau').json()['results']
+			canonical = self.lookup('Am Gessingplatz 4, 09526 Olbernhau').json()['results']
+		self.assertEqual(results, canonical)
+		self.assertEqual(len(results), 1)
+		self.assertEqual(results[0]['street'], 'Am Gessingplatz')
+		self.assertEqual(results[0]['street_number'], '4')
+		self.assertEqual(results[0]['city'], 'Olbernhau')
+		self.assertEqual(results[0]['zip_code'], '09526')
+		self.assertEqual(self.lookup('Am Gessingplatz 4, 9527 Olbernhau').json()['results'], [])
+
+	def test_missing_leading_zero_in_extracted_postal_code(self):
+		parts = {key: '' for key in ('street', 'house_number', 'city', 'county',
+		                            'state', 'country', 'postal_code')}
+		parts.update(street='Am Gessingplatz', house_number='4', city='Olbernhau', postal_code='9526')
+		with patch('geo.api.extract_address', return_value=parts):
+			results = self.lookup('unstructured Gessingplatz address').json()['results']
+		self.assertEqual(len(results), 1)
+		self.assertEqual(results[0]['zip_code'], '09526')
+
+	def test_missing_leading_zero_in_german_zip_range(self):
+		City.objects.filter(pk=self.olbernhau.pk).update(zip_code='09520-09530')
+		with patch('geo.api.extract_address', side_effect=AssertionError('unexpected LLM fallback')):
+			results = self.lookup('Am Gessingplatz 4, 9526 Olbernhau').json()['results']
+		self.assertEqual(len(results), 1)
+		self.assertEqual(results[0]['city'], 'Olbernhau')
 
 	def test_dutch_postal_code_prefix(self):
 		results = self.lookup('Voorstraat 53, 3931HC Woudenberg').json()['results']
